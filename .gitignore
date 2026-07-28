@@ -206,6 +206,9 @@
 !/LICENSE.txt
 !/README.md
 
+# Unignore large runner docker folder
+!/runner
+
 # Unignore tests' bundle config
 !/Library/Homebrew/test/.bundle/config
 
