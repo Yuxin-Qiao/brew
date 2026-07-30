@@ -10,6 +10,8 @@ COPY --chown=linuxbrew:linuxbrew startup.sh /home/linuxbrew/startup.sh
 RUN chmod +x /home/linuxbrew/startup.sh
 
 # Must be set when running the container (e.g., via `docker run -e RUNNER_JITCONFIG=...`)
+# This caries the GitHub configuration the runner needs to start, so we can't set it to any meaningful default.
+# This line ensures that it is set.
 ENV RUNNER_JITCONFIG=
 
 # Do not let .NET load icu to avoid poluting the image
