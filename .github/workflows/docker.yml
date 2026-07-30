@@ -299,33 +299,10 @@ jobs:
             sleep ${delay}
           done
 
-  resolve-runner-base-image:
-    name: Resolve runner base image digest
-    needs: merge
-    if: github.repository_owner == 'Homebrew' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    permissions: {}
-    outputs:
-      brew_image: ${{ steps.resolve.outputs.brew_image }}
-      brew_image_digest: ${{ steps.resolve.outputs.brew_image_digest }}
-    steps:
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - name: Resolve Homebrew/brew image digest
-        id: resolve
-        run: |
-          brew_image_reference="$(docker buildx imagetools inspect ghcr.io/homebrew/brew:main --format '{{.Manifest.Digest}}')"
-          IFS=: read -r brew_image_algorithm brew_image_digest <<< "${brew_image_reference}"
-          if [ "${brew_image_algorithm}" != "sha256" ] || [ -z "${brew_image_digest}" ]; then
-            echo "Unexpected digest format: ${brew_image_reference}" >&2
-            exit 1
-          fi
-          echo "brew_image=ghcr.io/homebrew/brew@sha256:${brew_image_digest}" >> "$GITHUB_OUTPUT"
-          echo "brew_image_digest=${brew_image_digest}" >> "$GITHUB_OUTPUT"
-
   build-runner:
     name: Build runner Docker image (${{ matrix.platform }})
-    needs: resolve-runner-base-image
+    needs: merge
+    if: github.repository_owner == 'Homebrew' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -367,7 +344,7 @@ jobs:
         with:
           context: runner
           platforms: ${{ matrix.platform }}
-          build-args: HOMEBREW_BREW_IMAGE=${{ needs.resolve-runner-base-image.outputs.brew_image }}
+          build-args: HOMEBREW_BREW_IMAGE=ghcr.io/homebrew/brew:main
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -386,7 +363,7 @@ jobs:
 
   publish-runner:
     name: Publish runner Docker image
-    needs: [resolve-runner-base-image, build-runner]
+    needs: [merge, build-runner]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -445,9 +422,10 @@ jobs:
       - name: Generate AWS image name
         env:
           AWS_REGISTRY: ${{ steps.aws_registry_login.outputs.registry }}
-          BREW_IMAGE_DIGEST: ${{ needs.resolve-runner-base-image.outputs.brew_image_digest }}
         run: |
-          echo "AWS_IMAGE=${AWS_REGISTRY}/runner-ecr:${BREW_IMAGE_DIGEST}-${GITHUB_SHA}" >> "$GITHUB_ENV"
+          brew_image_reference="$(docker buildx imagetools inspect ghcr.io/homebrew/brew:main --format '{{.Manifest.Digest}}')"
+          brew_image_digest="${brew_image_reference#sha256:}"
+          echo "AWS_IMAGE=${AWS_REGISTRY}/runner-ecr:${brew_image_digest}-${GITHUB_SHA}" >> "$GITHUB_ENV"
           echo "AWS_IMAGE_LATEST=${AWS_REGISTRY}/runner-ecr:latest" >> "$GITHUB_ENV"
 
       - name: Push image to AWS Elastic Container Registry
