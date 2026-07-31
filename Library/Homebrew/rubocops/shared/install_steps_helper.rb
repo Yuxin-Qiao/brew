@@ -50,6 +50,7 @@ module RuboCop
         "#{(ALLOWED_STEP_METHODS - COMPATIBILITY_STEP_METHODS).map { |method| "`#{method}`" }.join(", ")}.".freeze,
         String,
       )
+      BREW_RUBY_STEP_MSG = "Install steps must not use `brew ruby` because it enables developer mode."
       SIMPLE_STEP_CONVERSION_MSG = "Use `%<steps_block>s` for simple file preparation."
       REBUILD_ACTION_STEP_LINES = T.let(
         T.let([
@@ -108,6 +109,33 @@ module RuboCop
         direct_nodes.each do |node|
           offense_node = install_step_offense_node(node, allowed_methods)
           return offense_node if offense_node
+        end
+
+        nil
+      end
+
+      sig { params(block_node: T.nilable(RuboCop::AST::BlockNode)).returns(T.nilable(RuboCop::AST::Node)) }
+      def brew_ruby_step_node(block_node)
+        return if block_node.nil?
+
+        block_node.each_descendant(:send).each do |node|
+          send_node = T.cast(node, RuboCop::AST::SendNode)
+          next if send_node.receiver.present? || send_node.method_name != :run
+
+          command = send_node.first_argument
+          next unless command&.str_type?
+          next if command.str_content != "{{HOMEBREW_BREW_FILE}}"
+
+          options = send_node.arguments.last
+          next unless options&.hash_type?
+
+          args = T.cast(options, RuboCop::AST::HashNode).pairs.find do |pair|
+            pair.key.sym_type? && pair.key.value == :args
+          end&.value
+          next unless args&.array_type?
+
+          first_arg = args.child_nodes.first
+          return command if first_arg&.str_type? && first_arg.str_content == "ruby"
         end
 
         nil
