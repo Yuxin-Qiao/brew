@@ -1,4 +1,5 @@
 #!/bin/bash
+# Validates runtime context, configures the GitHub Actions runner from RUNNER_JITCONFIG, then starts it.
 set -euo pipefail
 
 RUNNER_DIRECTORY="${HOME}/actions-runner"
