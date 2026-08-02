@@ -348,9 +348,15 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
+        env:
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
+          digest="$BUILD_DIGEST"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "Unexpected digest format: $digest" >&2
+            exit 1
+          }
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
@@ -391,9 +397,14 @@ jobs:
 
       - name: Push manifest
         run: |
-          mapfile -t digest_args < <(find /tmp/digests -maxdepth 1 -type f -printf '%f\n' | sed "s#^#${IMAGE}@sha256:#")
+          image="$IMAGE"
+          [[ "$image" =~ ^ghcr\.io/[a-z0-9_.-]+/runner$ ]] || {
+            echo "Unexpected image name: $image" >&2
+            exit 1
+          }
+          mapfile -t digest_args < <(find /tmp/digests -maxdepth 1 -type f -printf '%f\n' | sed "s#^#${image}@sha256:#")
           docker buildx imagetools create \
-            --tag "${{ env.IMAGE }}:latest" \
+            --tag "${image}:latest" \
             "${digest_args[@]}"
 
       - name: Verify deployment secrets
