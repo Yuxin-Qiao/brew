@@ -14,7 +14,7 @@ RUN chmod +x /home/linuxbrew/startup.sh
 # This line ensures that it is set.
 ENV RUNNER_JITCONFIG=
 
-# Do not let .NET load icu to avoid poluting the image
+# Do not let .NET load icu to avoid polluting the image
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
 ENTRYPOINT ["/home/linuxbrew/startup.sh"]
