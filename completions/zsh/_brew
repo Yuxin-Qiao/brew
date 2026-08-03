@@ -960,6 +960,7 @@ cleanup)
           '(--winget)--no-winget[`cleanup` without WinGet packages. Enabled by default if `$HOMEBREW_BUNDLE_CLEANUP_NO_WINGET` is set]' \
           '(--no-npm --no-cleanup-npm --no-dump-npm)--npm[Clean up npm packages]' \
           '--quiet[Make some output more quiet]' \
+          '--reset-trust[Reset Homebrew'\''s global trust store to the values declared by the `Brewfile`]' \
           '(--no-tap --no-taps --no-cleanup-tap --no-dump-tap)--tap[Clean up Homebrew tap dependencies]' \
           '(--no-uv --no-cleanup-uv --no-dump-uv)--uv[Clean up uv tools]' \
           '--verbose[Make some output more verbose]' \

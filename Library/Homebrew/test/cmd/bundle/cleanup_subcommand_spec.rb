@@ -9,7 +9,8 @@ require "utils"
 RSpec.describe Homebrew::Cmd::Bundle::CleanupSubcommand do
   describe "#run" do
     it "asks before cleanup unless --force is passed" do
-      args = args_for_subcommand(:cleanup, all?: false, formulae?: false, casks?: false, taps?: false, mas?: false,
+      args = args_for_subcommand(:cleanup, reset_trust?: false, all?: false, formulae?: false, casks?: false,
+                                           taps?: false, mas?: false,
                                            vscode?: false, cargo?: false, flatpak?: false, go?: false, krew?: false,
                                            npm?: false, uv?: false)
       context = bundle_subcommand_context(:cleanup)
@@ -21,7 +22,8 @@ RSpec.describe Homebrew::Cmd::Bundle::CleanupSubcommand do
     end
 
     it "does not ask before cleanup when --force is passed" do
-      args = args_for_subcommand(:cleanup, all?: false, formulae?: false, casks?: false, taps?: false, mas?: false,
+      args = args_for_subcommand(:cleanup, reset_trust?: false, all?: false, formulae?: false, casks?: false,
+                                           taps?: false, mas?: false,
                                            vscode?: false, cargo?: false, flatpak?: false, go?: false, krew?: false,
                                            npm?: false, uv?: false)
       context = bundle_subcommand_context(:cleanup, force: true)
@@ -32,8 +34,18 @@ RSpec.describe Homebrew::Cmd::Bundle::CleanupSubcommand do
       described_class.new(args, context:).run
     end
 
+    it "requests a trust reset only when --reset-trust is passed" do
+      args = args_for_subcommand(:cleanup, reset_trust?: true)
+      context = bundle_subcommand_context(:cleanup)
+
+      expect(described_class).to receive(:cleanup).with(hash_including(reset_trust: true))
+
+      described_class.new(args, context:).run
+    end
+
     it "cleans up every supported type when --all is passed" do
-      args = args_for_subcommand(:cleanup, all?: true, formulae?: false, casks?: false, taps?: false, mas?: false,
+      args = args_for_subcommand(:cleanup, reset_trust?: false, all?: true, formulae?: false, casks?: false,
+                                           taps?: false, mas?: false,
                                            vscode?: false, cargo?: false, flatpak?: false, go?: false, krew?: false,
                                            npm?: false, uv?: false)
       context = bundle_subcommand_context(:cleanup, no_type_args: false)
@@ -58,7 +70,7 @@ RSpec.describe Homebrew::Cmd::Bundle::CleanupSubcommand do
     end
 
     it "does not clean up disabled types by default" do
-      args = args_for_subcommand(:cleanup, no_formulae?: true, no_mas?: true)
+      args = args_for_subcommand(:cleanup, reset_trust?: false, no_formulae?: true, no_mas?: true)
       context = bundle_subcommand_context(:cleanup)
 
       expect(described_class).to receive(:cleanup) do |formulae:, casks:, taps:, extension_types:, **|
@@ -73,7 +85,7 @@ RSpec.describe Homebrew::Cmd::Bundle::CleanupSubcommand do
     end
 
     it "treats --no-tap as --no-cleanup-tap" do
-      args = args_for_subcommand(:cleanup, no_taps?: true)
+      args = args_for_subcommand(:cleanup, reset_trust?: false, no_taps?: true)
       context = bundle_subcommand_context(:cleanup)
 
       expect(described_class).to receive(:cleanup) do |taps:, **|
@@ -84,7 +96,7 @@ RSpec.describe Homebrew::Cmd::Bundle::CleanupSubcommand do
     end
 
     it "does not clean up types disabled by environment" do
-      args = args_for_subcommand(:cleanup, no_cleanup_brew?: true, no_cleanup_mas?: true)
+      args = args_for_subcommand(:cleanup, reset_trust?: false, no_cleanup_brew?: true, no_cleanup_mas?: true)
       context = bundle_subcommand_context(:cleanup)
 
       expect(described_class).to receive(:cleanup) do |formulae:, casks:, taps:, extension_types:, **|
@@ -321,6 +333,12 @@ RSpec.describe Homebrew::Cmd::Bundle::CleanupSubcommand do
       RUBY
     end
 
+    let(:custom_remote_dsl) do
+      Homebrew::Bundle::Dsl.new(StringIO.new(<<~RUBY))
+        tap "myuser/mytap", "https://Git.Example.com/Foo.git", trusted: true
+      RUBY
+    end
+
     before do
       described_class.reset!
       allow(described_class).to receive_messages(casks_to_uninstall: [],
@@ -335,13 +353,93 @@ RSpec.describe Homebrew::Cmd::Bundle::CleanupSubcommand do
       Homebrew::Trust.trust!(:command, "old/tap/baz")
     end
 
-    it "resets the trust store to the Brewfile entries on forced cleanup" do
+    it "preserves the trust store on forced cleanup by default" do
       described_class.cleanup(force: true, dsl:)
+
+      expect(Homebrew::Trust.trusted_entries(:tap)).to eq(["old/tap"])
+      expect(Homebrew::Trust.trusted_entries(:formula)).to eq(["old/tap/foo"])
+      expect(Homebrew::Trust.trusted_entries(:cask)).to eq(["old/tap/bar"])
+      expect(Homebrew::Trust.trusted_entries(:command)).to eq(["old/tap/baz"])
+    end
+
+    it "resets the trust store to the Brewfile entries when requested" do
+      described_class.cleanup(force: true, reset_trust: true, dsl:)
 
       expect(Homebrew::Trust.trusted_entries(:tap)).to eq(["trusted/tap"])
       expect(Homebrew::Trust.trusted_entries(:formula)).to eq(%w[thirdparty/tap/foo thirdparty/tap/qux])
       expect(Homebrew::Trust.trusted_entries(:cask)).to eq(%w[thirdparty/tap/bar thirdparty/tap/quux])
       expect(Homebrew::Trust.trusted_entries(:command)).to eq(["thirdparty/tap/baz"])
+    end
+
+    it "previews the trust entries that an explicit reset would change" do
+      expect(Homebrew::Cleanup).to receive(:dry_run_output).and_return("")
+      allow(Formatter).to receive(:columns) { |entries| entries.join("\n") }
+
+      expect do
+        described_class.cleanup(reset_trust: true, dsl:)
+      end.to raise_error(SystemExit).and output(<<~EOS).to_stdout
+        Would add trust entries:
+        cask: thirdparty/tap/bar
+        cask: thirdparty/tap/quux
+        command: thirdparty/tap/baz
+        formula: thirdparty/tap/foo
+        formula: thirdparty/tap/qux
+        tap: trusted/tap
+        Would remove trust entries:
+        cask: old/tap/bar
+        command: old/tap/baz
+        formula: old/tap/foo
+        tap: old/tap
+        Run `brew bundle cleanup --force --reset-trust` to make these changes.
+      EOS
+    end
+
+    {
+      "global Brewfile"              => {
+        options:       { global: true },
+        force_command: "brew bundle cleanup --force --global --reset-trust",
+      },
+      "custom Brewfile and zap mode" => {
+        options:       { file: "/tmp/Custom Brewfile", zap: true },
+        force_command: "brew bundle cleanup --force --file=/tmp/Custom\\ Brewfile --reset-trust --zap",
+      },
+    }.each do |scope, values|
+      it "preserves the #{scope} in the printed rerun command" do
+        allow(Homebrew::Cleanup).to receive(:dry_run_output).and_return("")
+
+        expect do
+          described_class.cleanup(**values.fetch(:options), reset_trust: true, dsl:)
+        end.to raise_error(SystemExit).and output(/Run `#{Regexp.escape(values.fetch(:force_command))}`/).to_stdout
+      end
+    end
+
+    it "does not preview changes immediately after resetting a mixed-case custom remote" do
+      described_class.cleanup(force: true, reset_trust: true, dsl: custom_remote_dsl)
+      allow(Homebrew::Cleanup).to receive(:dry_run_output).and_return("")
+
+      expect do
+        described_class.cleanup(reset_trust: true, dsl: custom_remote_dsl)
+      end.not_to output.to_stdout
+    end
+
+    it "does not reset the trust store if package cleanup fails" do
+      allow(described_class).to receive(:system_output_no_stderr)
+        .and_raise(ErrorDuringExecution.new([HOMEBREW_BREW_FILE, "cleanup"], status: 1))
+
+      expect do
+        described_class.cleanup(force: true, reset_trust: true, dsl:)
+      end.to raise_error(ErrorDuringExecution)
+      expect(
+        tap:     Homebrew::Trust.trusted_entries(:tap),
+        formula: Homebrew::Trust.trusted_entries(:formula),
+        cask:    Homebrew::Trust.trusted_entries(:cask),
+        command: Homebrew::Trust.trusted_entries(:command),
+      ).to eq(
+        tap:     ["old/tap"],
+        formula: ["old/tap/foo"],
+        cask:    ["old/tap/bar"],
+        command: ["old/tap/baz"],
+      )
     end
   end
 

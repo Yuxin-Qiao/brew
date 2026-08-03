@@ -670,6 +670,10 @@ Unless `--force` is passed, this prompts before removing anything and returns a
 : Clean up without Homebrew tap dependencies. Enabled by default if
   `$HOMEBREW_BUNDLE_CLEANUP_NO_TAP` is set.
 
+`--reset-trust`
+
+: Reset Homebrew's global trust store to the values declared by the `Brewfile`.
+
 `--mas`
 
 : Clean up Mac App Store dependencies.

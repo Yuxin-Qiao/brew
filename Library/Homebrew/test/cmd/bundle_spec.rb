@@ -79,11 +79,13 @@ RSpec.describe Homebrew::Cmd::Bundle do
     end
   end
 
-  it "accepts global flags on subcommands that do not re-declare them", :aggregate_failures do
+  it "accepts global flags on subcommands and makes cleanup trust resets opt-in", :aggregate_failures do
     expect(described_class.new(%w[cleanup --verbose]).args.verbose?).to be(true)
     expect(described_class.new(%w[cleanup -v]).args.verbose?).to be(true)
     expect(described_class.new(%w[dump --verbose]).args.subcommand).to eq("dump")
     expect(described_class.new(%w[list --verbose]).args.subcommand).to eq("list")
+    expect(described_class.new(%w[cleanup]).args.reset_trust?).to be(false)
+    expect(described_class.new(%w[cleanup --reset-trust]).args.reset_trust?).to be(true)
   end
 
   it "uses subcommand-specific option descriptions", :aggregate_failures do

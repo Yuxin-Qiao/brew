@@ -215,6 +215,9 @@ class Homebrew::Cmd::Bundle::Args < Homebrew::CLI::Args
   sig { returns(T::Boolean) }
   def npm?; end
 
+  sig { returns(T::Boolean) }
+  def reset_trust?; end
+
   sig { returns(T.nilable(String)) }
   def sandbox; end
 

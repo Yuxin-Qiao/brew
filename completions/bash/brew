@@ -963,6 +963,7 @@ cleanup)
         --no-winget
         --npm
         --quiet
+        --reset-trust
         --tap
         --uv
         --verbose

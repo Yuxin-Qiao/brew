@@ -4,6 +4,7 @@
 require "abstract_subcommand"
 require "bundle/extensions/extension"
 require "cleanup"
+require "shellwords"
 
 require "utils/formatter"
 require "utils"
@@ -56,6 +57,8 @@ module Homebrew
           switch "--no-cleanup-tap",
                  description: "Clean up without Homebrew tap dependencies.",
                  env:         :bundle_cleanup_no_tap
+          switch "--reset-trust",
+                 description: "Reset Homebrew's global trust store to the values declared by the `Brewfile`."
           Homebrew::Bundle.extensions.select(&:cleanup_supported?).each do |extension|
             env = "HOMEBREW_#{extension.cleanup_disable_env.to_s.upcase}"
             switch "--#{extension.flag}",
@@ -80,6 +83,7 @@ module Homebrew
             force:           context.force,
             zap:             context.zap,
             ask:             context.ask || !context.force,
+            reset_trust:     args.reset_trust?,
             formulae:        core_type_options.fetch(:formulae),
             casks:           core_type_options.fetch(:casks),
             taps:            core_type_options.fetch(:taps),
@@ -113,11 +117,25 @@ module Homebrew
         sig {
           params(global: T::Boolean, file: T.nilable(String), force: T::Boolean, zap: T::Boolean,
                  dsl: T.nilable(Homebrew::Bundle::Dsl), formulae: T::Boolean, casks: T::Boolean, taps: T::Boolean,
-                 ask: T::Boolean, extension_types: Homebrew::Bundle::ExtensionTypes).void
+                 ask: T::Boolean, reset_trust: T::Boolean,
+                 extension_types: Homebrew::Bundle::ExtensionTypes).void
         }
         def self.cleanup(global: false, file: nil, force: false, zap: false, dsl: nil,
-                         formulae: true, casks: true, taps: true, ask: false, extension_types: {})
+                         formulae: true, casks: true, taps: true, ask: false, reset_trust: false, extension_types: {})
           read_dsl_from_brewfile!(global:, file:, dsl:)
+          dsl = @dsl
+          raise ArgumentError, "dsl is unset!" unless dsl
+
+          desired_trust_entries = T.let(
+            if reset_trust
+              Homebrew::Bundle::Trust.entries(dsl.entries)
+                                    .map { |type, name| [type, Homebrew::Trust.normalise_name(name)] }
+                                    .uniq
+            else
+              []
+            end,
+            T::Array[[Symbol, String]],
+          )
 
           cleanup_formulae = formulae
           cleanup_casks = casks
@@ -142,16 +160,10 @@ module Homebrew
           end
           cleanup_extensions = Homebrew::Bundle.extensions.select(&:cleanup_supported?).filter_map do |extension|
             next unless extension_types.fetch(extension.type, false)
-            raise ArgumentError, "dsl is unset!" unless @dsl
 
-            [extension, extension.cleanup_items(@dsl.entries)]
+            [extension, extension.cleanup_items(dsl.entries)]
           end
           if force
-            dsl = @dsl
-            raise ArgumentError, "dsl is unset!" unless dsl
-
-            Homebrew::Trust.replace!(Homebrew::Bundle::Trust.entries(dsl.entries))
-
             if casks.any?
               args = if zap
                 ["--zap"]
@@ -181,6 +193,7 @@ module Homebrew
 
             cleanup = system_output_no_stderr(HOMEBREW_BREW_FILE, "cleanup")
             puts cleanup unless cleanup.empty?
+            Homebrew::Trust.replace!(desired_trust_entries) if reset_trust
           else
             would_uninstall = false
 
@@ -210,19 +223,47 @@ module Homebrew
               would_uninstall = true
             end
 
+            would_reset_trust = false
+            if reset_trust
+              current_trust_entries = T.let(
+                [:tap, :formula, :cask, :command].flat_map do |type|
+                  Homebrew::Trust.trusted_entries(type).map { |name| [type, name] }
+                end,
+                T::Array[[Symbol, String]],
+              )
+              trust_entries_to_add = desired_trust_entries - current_trust_entries
+              trust_entries_to_remove = current_trust_entries - desired_trust_entries
+
+              if trust_entries_to_add.any?
+                puts "Would add trust entries:"
+                puts Formatter.columns(trust_entries_to_add.map { |type, name| "#{type}: #{name}" }.sort)
+                would_reset_trust = true
+              end
+              if trust_entries_to_remove.any?
+                puts "Would remove trust entries:"
+                puts Formatter.columns(trust_entries_to_remove.map { |type, name| "#{type}: #{name}" }.sort)
+                would_reset_trust = true
+              end
+            end
+
             would_cleanup = Cleanup.printed_dry_run_output?(Cleanup.dry_run_output)
-            would_change = would_uninstall || would_cleanup
+            would_change = would_uninstall || would_reset_trust || would_cleanup
 
             # `Ask.confirm?` only prints a prompt on a TTY; when it does, don't
             # also tell the user to rerun with `--force`.
             if ask && would_change && Homebrew::Ask.confirm?(action: "cleanup")
               cleanup(global:, file:, force: true, zap:, dsl: @dsl, formulae: cleanup_formulae, casks: cleanup_casks,
-                      taps: cleanup_taps, extension_types:)
+                      taps: cleanup_taps, reset_trust:, extension_types:)
               return
             end
 
-            puts "Run `brew bundle cleanup --force` to make these changes." if would_change
-            exit 1 if would_uninstall
+            force_command = +"brew bundle cleanup --force"
+            force_command << " --global" if global
+            force_command << " --file=#{Shellwords.escape(file)}" if file
+            force_command += " --reset-trust" if reset_trust
+            force_command << " --zap" if zap
+            puts "Run `#{force_command}` to make these changes." if would_change
+            exit 1 if would_uninstall || would_reset_trust
           end
         end
 

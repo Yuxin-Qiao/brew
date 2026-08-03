@@ -747,6 +747,7 @@ __fish_brew_complete_sub_arg 'bundle' 'cleanup' -l no-vscode -d '`cleanup` witho
 __fish_brew_complete_sub_arg 'bundle' 'cleanup' -l no-winget -d '`cleanup` without WinGet packages. Enabled by default if `$HOMEBREW_BUNDLE_CLEANUP_NO_WINGET` is set'
 __fish_brew_complete_sub_arg 'bundle' 'cleanup' -l npm -d 'Clean up npm packages'
 __fish_brew_complete_sub_arg 'bundle' 'cleanup' -l quiet -d 'Make some output more quiet'
+__fish_brew_complete_sub_arg 'bundle' 'cleanup' -l reset-trust -d 'Reset Homebrew\'s global trust store to the values declared by the `Brewfile`'
 __fish_brew_complete_sub_arg 'bundle' 'cleanup' -l tap -d 'Clean up Homebrew tap dependencies'
 __fish_brew_complete_sub_arg 'bundle' 'cleanup' -l uv -d 'Clean up uv tools'
 __fish_brew_complete_sub_arg 'bundle' 'cleanup' -l verbose -d 'Make some output more verbose'
