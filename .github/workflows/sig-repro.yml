@@ -55,8 +55,8 @@ jobs:
             set +e
             codesign --verify --strict "/tmp/$f.dylib"
             echo "${f}_VERIFY_EXIT=$?"
+            codesign -dvvv "/tmp/$f.dylib" 2>&1 | grep -E "Identifier=|CodeDirectory|Hash type" | head -5
             set -e
-            codesign -dvvv "/tmp/$f.dylib" 2>&1 | rg "Identifier=|CodeDirectory|Hash type"
           done
 
       - name: Upload signed copies for offline diff
