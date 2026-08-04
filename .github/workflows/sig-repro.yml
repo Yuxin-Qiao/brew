@@ -1,0 +1,37 @@
+name: sig-repro
+
+on:
+  push:
+    branches:
+      - sig-repro
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    runs-on: macos-14
+    steps:
+      - name: Install ruby (Intel bottle, triggers relocation re-sign)
+        run: brew install ruby
+
+      - name: Verify ruby-macho re-signed libruby
+        run: |
+          set +e
+          codesign --verify --strict "$(brew --prefix ruby)/lib/libruby.4.0.dylib"
+          echo "VERIFY_EXIT=$?"
+          set -e
+          ls -la "$(brew --prefix ruby)/lib/libruby.4.0.dylib"
+
+      - name: Dump CodeDirectory of ruby-macho signature
+        run: codesign -dvvv "$(brew --prefix ruby)/lib/libruby.4.0.dylib" 2>&1 | head -30
+
+      - name: Control - re-sign same dylib with /usr/bin/codesign and verify
+        run: |
+          codesign --force --sign - "$(brew --prefix ruby)/lib/libruby.4.0.dylib"
+          codesign --verify --strict "$(brew --prefix ruby)/lib/libruby.4.0.dylib"
+          echo "CONTROL_VERIFY_EXIT=$?"
+          codesign -dvvv "$(brew --prefix ruby)/lib/libruby.4.0.dylib" 2>&1 | head -30
+
+      - name: Dump load commands
+        run: otool -l "$(brew --prefix ruby)/lib/libruby.4.0.dylib" | sed -n '1,120p'
