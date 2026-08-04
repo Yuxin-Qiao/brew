@@ -34,9 +34,11 @@ jobs:
           SRC="$(brew --prefix ruby)/lib/libruby.4.0.dylib"
 
           cp "$SRC" /tmp/libruby.macho.dylib
+          chmod u+w /tmp/libruby.macho.dylib
 
           # A: ruby-macho re-sign with the identifier /usr/bin/codesign uses.
           cp "$SRC" /tmp/libruby.expa.dylib
+          chmod u+w /tmp/libruby.expa.dylib
           "$RUBY" -I "$MACHO_GEM" -e '
             require "macho"
             m = MachO.open("/tmp/libruby.expa.dylib")
@@ -46,6 +48,7 @@ jobs:
 
           # B: codesign with the longer identifier ruby-macho uses.
           cp "$SRC" /tmp/libruby.expb.dylib
+          chmod u+w /tmp/libruby.expb.dylib
           codesign --force --sign - --identifier libruby.4.0 /tmp/libruby.expb.dylib
 
           for f in libruby.macho libruby.expa libruby.expb; do
