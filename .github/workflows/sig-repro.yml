@@ -27,7 +27,10 @@ jobs:
           ls -la "$(brew --prefix ruby)/lib/libruby.4.0.dylib"
 
       - name: Dump CodeDirectory of ruby-macho signature
-        run: codesign -dvvv "$(brew --prefix ruby)/lib/libruby.4.0.dylib" 2>&1 | head -30
+        run: |
+          codesign -dvvv "$(brew --prefix ruby)/lib/libruby.4.0.dylib" 2>&1 | head -30
+          otool -l "$(brew --prefix ruby)/lib/libruby.4.0.dylib" | sed -n '1,160p'
+          cp "$(brew --prefix ruby)/lib/libruby.4.0.dylib" /tmp/libruby.macho.dylib
 
       - name: Control - re-sign same dylib with /usr/bin/codesign and verify
         run: |
@@ -35,6 +38,13 @@ jobs:
           codesign --verify --strict "$(brew --prefix ruby)/lib/libruby.4.0.dylib"
           echo "CONTROL_VERIFY_EXIT=$?"
           codesign -dvvv "$(brew --prefix ruby)/lib/libruby.4.0.dylib" 2>&1 | head -30
+          otool -l "$(brew --prefix ruby)/lib/libruby.4.0.dylib" | sed -n '1,160p'
+          cp "$(brew --prefix ruby)/lib/libruby.4.0.dylib" /tmp/libruby.codesign.dylib
 
-      - name: Dump load commands
-        run: otool -l "$(brew --prefix ruby)/lib/libruby.4.0.dylib" | sed -n '1,120p'
+      - name: Upload signed copies for offline diff
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-dylibs
+          path: |
+            /tmp/libruby.macho.dylib
+            /tmp/libruby.codesign.dylib
