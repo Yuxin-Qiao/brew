@@ -26,20 +26,35 @@ jobs:
           set -e
           ls -la "$(brew --prefix ruby)/lib/libruby.4.0.dylib"
 
-      - name: Dump CodeDirectory of ruby-macho signature
+      - name: Experiments to isolate root cause
         run: |
-          codesign -dvvv "$(brew --prefix ruby)/lib/libruby.4.0.dylib" 2>&1 | head -30
-          otool -l "$(brew --prefix ruby)/lib/libruby.4.0.dylib" | sed -n '1,160p'
-          cp "$(brew --prefix ruby)/lib/libruby.4.0.dylib" /tmp/libruby.macho.dylib
+          set -e
+          RUBY=$(ls -d /usr/local/Homebrew/Library/Homebrew/vendor/portable-ruby/*/bin/ruby | head -1)
+          MACHO_GEM=$(ls -d /usr/local/Homebrew/Library/Homebrew/vendor/bundle/ruby/*/gems/ruby-macho-6.0.0/lib | head -1)
+          SRC="$(brew --prefix ruby)/lib/libruby.4.0.dylib"
 
-      - name: Control - re-sign same dylib with /usr/bin/codesign and verify
-        run: |
-          codesign --force --sign - "$(brew --prefix ruby)/lib/libruby.4.0.dylib"
-          codesign --verify --strict "$(brew --prefix ruby)/lib/libruby.4.0.dylib"
-          echo "CONTROL_VERIFY_EXIT=$?"
-          codesign -dvvv "$(brew --prefix ruby)/lib/libruby.4.0.dylib" 2>&1 | head -30
-          otool -l "$(brew --prefix ruby)/lib/libruby.4.0.dylib" | sed -n '1,160p'
-          cp "$(brew --prefix ruby)/lib/libruby.4.0.dylib" /tmp/libruby.codesign.dylib
+          cp "$SRC" /tmp/libruby.macho.dylib
+
+          # A: ruby-macho re-sign with the identifier /usr/bin/codesign uses.
+          cp "$SRC" /tmp/libruby.expa.dylib
+          "$RUBY" -I "$MACHO_GEM" -e '
+            require "macho"
+            m = MachO.open("/tmp/libruby.expa.dylib")
+            m.codesign!(identifier: "libruby.4")
+            m.write!
+          '
+
+          # B: codesign with the longer identifier ruby-macho uses.
+          cp "$SRC" /tmp/libruby.expb.dylib
+          codesign --force --sign - --identifier libruby.4.0 /tmp/libruby.expb.dylib
+
+          for f in libruby.macho libruby.expa libruby.expb; do
+            set +e
+            codesign --verify --strict "/tmp/$f.dylib"
+            echo "${f}_VERIFY_EXIT=$?"
+            set -e
+            codesign -dvvv "/tmp/$f.dylib" 2>&1 | rg "Identifier=|CodeDirectory|Hash type"
+          done
 
       - name: Upload signed copies for offline diff
         uses: actions/upload-artifact@v4
@@ -47,4 +62,5 @@ jobs:
           name: signed-dylibs
           path: |
             /tmp/libruby.macho.dylib
-            /tmp/libruby.codesign.dylib
+            /tmp/libruby.expa.dylib
+            /tmp/libruby.expb.dylib
